@@ -15,48 +15,43 @@ def maxclique_grad(A: np.ndarray, x: np.ndarray, penalty: str = 'l2', p: int = N
     penalty: {'l2', 'f1', 'f2'} string specifying the type of penalty to use; defaults to l2;
     p, alpha, beta, eps: penalty parameters.
     """
-    dp = np.linalg.norm(x, ord=2)
+    dp = 2*x
     if str.lower(penalty) == 'f1':
         raise NotImplementedError
     if str.lower(penalty) == 'f2':
-        if beta <= 0 or alpha < 0 or alpha > (2/beta^2):
+        if beta <= 0 or alpha < 0 or alpha >= (2/beta**2):
             raise ValueError
         dp = alpha*np.sum(-beta*np.exp(-beta*x))
-    return 2*np.dot(A, x) + dp
 
-def maxclique_lmo(x, grad):
+    return np.dot((A + A.T), x) + dp
+
+def maxclique_lmo(grad):
     """
     LMO for the maximal clique problem. 
     The feasible set is the unit simplex, so return a [0,...,1,...,0] vector with 1 in place of the lowest element of the gradient.
     """
-    e = np.zeros_like(x)
-    if grad is callable:
-        idxmin = np.argmin(grad(x))
-    elif grad is np.ndarray:
-        idxmin = np.argin(grad(x))
+    e = np.zeros(shape=grad.shape[-1])
+    idxmin = np.argmin(grad)
     e[idxmin] = 1
     return e
 
-def frankwolfe(stepsize: float, domain: np.ndarray, gr:callable, lmo: callable, max_iter: int, x_0:float):
+def frankwolfe(A: np.ndarray, x_0:float, grad: callable=maxclique_grad, lmo: callable=maxclique_lmo, max_iter: int=1000, stepsize: float = None):
     '''
     Basic Frank-Wolfe algorithm.
 
-    stepsize: defaults to 2/(k+2), step defined as (1-stepsize)*x_k + stepsize*x_k_hat
-    domain: feasible set;
+    A: graph adjacency matrix;
     g: gradient f-n;
+    stepsize: defaults to 2/(k+2), step defined as (1-stepsize)*x_k + stepsize*x_k_hat;
     max_iter: max. nr of iterations,
-    x_0: starting point, defaults to a random element of the feasible set.
+    x_0: starting point.
     '''
-    x_hist = []
+    x_hist = [x_0]
     s_hist = []
-    # random starting point from the domain
-    if x_0 is None:
-        x_0  = np.random.rand()*(domain.shape[0] - 1)
     for k in range(max_iter):
-        x_opt = lmo(x_hist[-1], gr)
-        gamma = 2/(k+1) if stepsize is None else stepsize
-        x_next = (1-gamma)*x_hist[-1] + gamma*x_opt
+        s = lmo(grad(A, x_hist[-1]))
+        gamma = 2/(k+2) if stepsize is None else stepsize
+        x_next = (1-gamma)*x_hist[-1] + gamma*s
 
         x_hist.append(x_next)
-        s_hist.append(x_opt)
+        s_hist.append(s)
     return x_hist, s_hist
