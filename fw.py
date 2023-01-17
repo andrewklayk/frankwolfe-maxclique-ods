@@ -23,15 +23,17 @@ def maxclique_grad(A: np.ndarray, x: np.ndarray, penalty: str = 'l2', p: int = 0
 
     Note: in this problem, the goal is maximization, so the gradient must be multiplied by -1.
     """
-
-    dp = 2*x*p
-    if str.lower(penalty) == 'f1':
+    if str.lower(penalty) == 'l2':
+        dp = 2*x*p
+    elif str.lower(penalty) == 'f1':
         raise NotImplementedError
-    if str.lower(penalty) == 'f2':
+    elif str.lower(penalty) == 'f2':
         if beta <= 0 or alpha < 0 or alpha >= (2/beta**2):
             raise ValueError
         dp = alpha*np.sum(-beta*np.exp(-beta*x))
-
+    else:
+        raise ValueError('Unknown penalty: must be l2, f1 or f2')
+    
     return 2 * A @ x + dp
 
 def maxclique_lmo(grad):
