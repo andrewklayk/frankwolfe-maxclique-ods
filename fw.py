@@ -48,7 +48,7 @@ def maxclique_lmo(grad):
     e[idxmin] = 1
     return e
 
-def frankwolfe(x_0: float, grad=maxclique_grad, lmo=maxclique_lmo, max_iter: int = 10000, stepsize: float = None):
+def frankwolfe(x_0: float, grad=maxclique_grad, lmo=maxclique_lmo, max_iter: int = 10000, tol: float = 1e-5, stepsize: float = None):
     '''
     Basic Frank-Wolfe algorithm.
 
@@ -64,9 +64,10 @@ def frankwolfe(x_0: float, grad=maxclique_grad, lmo=maxclique_lmo, max_iter: int
     for k in range(max_iter):
         g = grad(x=x_hist[-1])
         s = lmo(g)
+        if np.abs((x_hist[-1] - s) @ g) < tol:
+            break
         gamma = 2/(k+2) if stepsize is None else stepsize
         x_next = (1-gamma)*x_hist[-1] + gamma*s
-
         x_hist.append(x_next)
         s_hist.append(s)
     return x_hist, s_hist
