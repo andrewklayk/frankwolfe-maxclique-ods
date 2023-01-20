@@ -6,6 +6,9 @@ import numpy as np
 # (feasible set consists of probability simplexes)
 # and A - a {0,1} graph adjacency matrix
 
+#test
+#test
+
 def maxclique_target(A: np.ndarray, x:np.ndarray, p: int=0.5):
     '''
     Target function for the Maximal Clique Problem.
