@@ -1,7 +1,11 @@
+# math
 import numpy as np
 from fw import maxclique_grad, maxclique_lmo, frankwolfe
-from matplotlib import pyplot as plt
-from scipy import stats
+# read and save data and results
+import pandas as pd
+import os
+# progress bar
+from tqdm import tqdm
 
 def make_test_graph(n, p):
     r = [0,1]
@@ -23,6 +27,11 @@ def graph_dict_to_matrix(d: dict, size: int):
     if not np.all(A == A.T):
         A += A.T
     return A
+
+
+#TODO
+def read_dimacs(fpath: str):
+    pass
 
 def read_dimacs_brock(fpath: str):
     clique = []
@@ -53,40 +62,37 @@ def read_dimacs_brock(fpath: str):
     return graph, graph_size, clique
 
 def main():
-    graph, graph_size, clique = read_dimacs_brock('DIMACS/brock200_2.clq')
-    A = graph_dict_to_matrix(d=graph, size=graph_size)
+    graphs_dir = 'DIMACS'
     n_tries = 100
-    res = []
-    f_res = []
-    for i in range(n_tries):
-        x_0 = np.random.uniform(low=0.0, high=1.0, size=graph_size)
-        x_0 /= np.sum(x_0)
-        x_hist, _ = frankwolfe(
-                grad = lambda x: -maxclique_grad(A, x,penalty='f2', p=0.5, alpha=1, beta=0.5),
-                lmo = maxclique_lmo, max_iter = 10000, x_0 = x_0)
-        x = x_hist[-1]
-        res.append(x)
-        f_res.append(1./(1.-np.dot(np.dot(x.T,A),x)))
-    avg_clique_size = stats.mode(f_res)
-    max_clique_size = np.max(f_res)
-    print(f'Mode found: {avg_clique_size}, Largest found: {max_clique_size}, Largest actual: {len(clique)}')
-
-
-    n_graphs = 0
-    for _ in range(n_graphs):
-        n = 6
-        A = make_test_graph(n, 0.5)
-        draw_graph(A)
-        x_0 = np.random.uniform(low=0.0, high=1.0, size=n)
-        x_0 /= np.sum(x_0)
-
-        x_hist, _ = frankwolfe(
-            grad = lambda x: -maxclique_grad(A, x,penalty='f2', alpha=1, beta=0.1),
-            lmo = maxclique_lmo, max_iter = 10000, x_0 = x_0)
-        x = x_hist[-1]
-        print(1./(1.-np.dot(np.dot(x.T,A),x)))
-        print(x_hist[-1])
-        plt.show()
+    results = dict()
+    print('\n')
+    for filename in os.listdir(graphs_dir):
+        f = os.path.join(graphs_dir, filename)
+        if 'brock' in filename:
+            graph, graph_size, clique = read_dimacs_brock(f)
+        else:
+            continue
+        A = graph_dict_to_matrix(d=graph, size=graph_size)
+        res = []
+        f_res = []
+        graph_name = '.'.join(filename.split('.')[:-1])
+        print(f'Working on {graph_name}')
+        for i in tqdm(range(n_tries)):
+            x_0 = np.random.uniform(low=0.0, high=1.0, size=graph_size)
+            x_0 /= np.sum(x_0)
+            #x_0 = np.zeros(graph_size)
+            x_hist, _ = frankwolfe(
+                    grad = lambda x: -maxclique_grad(A, x,penalty='f2', p=0.5, alpha=0.04, beta=5),
+                    lmo = maxclique_lmo, max_iter = 10000, x_0 = x_0)
+            x = x_hist[-1]
+            res.append(x)
+            f_res.append(1./(1.-np.dot(np.dot(x.T,A),x)))
+        avg_clique_size = np.mean(f_res)
+        max_clique_size = np.max(f_res)
+        cs_std = np.std(f_res)
+        results[graph_name] = (avg_clique_size, max_clique_size, cs_std)
+        #print(f'Mean found: {avg_clique_size}, Largest found: {max_clique_size}, Largest actual: {len(clique)}')
+    pd.DataFrame(results).to_csv('mcresults.csv')
 
 
 if __name__ == "__main__":
