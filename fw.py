@@ -54,7 +54,7 @@ def frankwolfe(
     grad=maxclique_grad, 
     lmo=maxclique_lmo,
     max_iter: int = 10000, 
-    tol: float = 1e-4, 
+    tol: float = 1e-3, 
     stepsize: float = None
     ):
     '''
@@ -88,8 +88,9 @@ def frankwolfe_awaysteps(
     grad=maxclique_grad, 
     lmo=maxclique_lmo, 
     max_iter: int = 10000, 
-    tol: float = 1e-5, 
+    tol: float = 1e-3, 
     stepsize: float = None):
+
     x_hist = [x_0]
     s_t = [x_0]
     weights = dict()
@@ -98,13 +99,17 @@ def frankwolfe_awaysteps(
         xt = x_hist[-1]
         g = grad(x=xt)
         s = lmo(g)
+        # find fw direction
         d_fw = s - xt
-        if -d_fw @ g < tol:
-            #print(f'Stopped by condition at {k}')
+        # check the FW gap
+        gap_fw = -d_fw @ g
+        if gap_fw < tol:
             break
-        v = s_t[np.argmax([g@v for v in s_t],axis=0)]
+        # find away-step direction
+        v = s_t[np.argmax([g @ v for v in s_t],axis=0)]
         d_as = xt - v
-        if -g @ d_fw >= -g @ d_as:
+        # choose the direction
+        if gap_fw >= -g @ d_as:
             use_fw = True
             gamma_max = 1
             d = d_fw
@@ -113,15 +118,61 @@ def frankwolfe_awaysteps(
             a_v =  weights[np.where(v)[0][0]]
             gamma_max = a_v/(1-a_v)
             d = d_as
-        # LINESEARCH
-        gamma, _, _ ,_ ,_ ,_ = line_search(f, grad, xt, d, g)
+        # Line Search for stepsize
+        gamma, _, _ ,_ ,_ ,_ = line_search(f, grad, xt, d, g, extra_condition=lambda a, x, f, g: a <= gamma_max)
         x_next = xt + gamma*d
         if use_fw:
+            # update weights for s
             if np.where(s)[0][0] in weights.keys():
                 weights[np.where(s)[0][0]] += gamma
             else:
+                s_t.append(s)
                 weights[np.where(s)[0][0]] = gamma
         else:
+            # update weights for v
             weights[np.where(v)[0][0]] -= gamma
+        x_hist.append(x_next)
+    return x_hist, s_t, k
+
+
+def frankwolfe_pairwise(
+    x_0: float, 
+    f=maxclique_target, 
+    grad=maxclique_grad, 
+    lmo=maxclique_lmo, 
+    max_iter: int = 10000, 
+    tol: float = 1e-3, 
+    stepsize: float = None):
+
+    x_hist = [x_0]
+    s_t = [x_0]
+    weights = dict()
+    weights[np.where(x_0)[0][0]] = 1
+    for k in range(max_iter):
+        xt = x_hist[-1]
+        g = grad(x=xt)
+        s = lmo(g)
+        # find fw direction
+        d_fw = s - xt
+        # check the FW gap
+        gap_fw = -d_fw @ g
+        if gap_fw < tol:
+            break
+        # find away-step direction
+        v = s_t[np.argmax([g @ v for v in s_t],axis=0)]
+        # combine directions
+        a_v =  weights[np.where(v)[0][0]]
+        d = s - v
+        # Line Search
+        gamma, _, _ ,_ ,_ ,_ = line_search(f, grad, xt, d, g, extra_condition=lambda a, x, f, g: a <= a_v)
+        x_next = xt + gamma*d
+        # update weights for s
+        if np.where(s)[0][0] in weights.keys():
+            weights[np.where(s)[0][0]] += gamma
+        else:
+            s_t.append(s)
+            weights[np.where(s)[0][0]] = gamma
+        # update weights for v
+        weights[np.where(v)[0][0]] -= gamma
         x_hist.append(x_next)
     return x_hist, s_t, k

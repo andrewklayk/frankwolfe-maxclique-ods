@@ -71,7 +71,7 @@ def main():
     
     x_0 = np.zeros(n,dtype='float')
     x_0[np.random.randint(low=0, high=n)] = 1.
-    x_hist, _, k = frankwolfe_awaysteps(
+    x_hist, _, k = frankwolfe_pairwise(
                     f=lambda x: -maxclique_target(A, x),
                     grad = lambda x: -maxclique_grad(A, x, penalty='l2'),
                     lmo = maxclique_lmo, max_iter = 10000, x_0 = x_0, tol=1e-3)
@@ -106,10 +106,10 @@ def main():
         for i in tqdm(range(n_tries)):
             x_0 = np.zeros(graph_size,dtype='float')
             x_0[np.random.randint(low=0, high=graph_size)] = 1.
-            x_hist, _, k = frankwolfe_awaysteps(
-                f=lambda x: -maxclique_target(A, x),
+            x_hist, _, k = frankwolfe(
+                #f=lambda x: -maxclique_target(A, x),
                 grad = lambda x: -maxclique_grad(A, x, penalty='l2'),
-                lmo = maxclique_lmo, max_iter = 10000, x_0 = x_0, tol=1e-3)
+                lmo = maxclique_lmo, max_iter = 10000, x_0 = x_0, tol=1e-4)
             x = x_hist[-1]
             res.append(x)
             iters.append(k)
