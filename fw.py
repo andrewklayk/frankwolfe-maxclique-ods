@@ -1,4 +1,5 @@
 import numpy as np
+from scipy.optimize import line_search
 
 # maximal clique problem
 # target function is xT*A*x + some regularization term
@@ -48,7 +49,14 @@ def maxclique_lmo(grad):
     e[idxmin] = 1
     return e
 
-def frankwolfe(x_0: float, grad=maxclique_grad, lmo=maxclique_lmo, max_iter: int = 10000, tol: float = 1e-5, stepsize: float = None):
+def frankwolfe(
+    x_0: float, 
+    grad=maxclique_grad, 
+    lmo=maxclique_lmo,
+    max_iter: int = 10000, 
+    tol: float = 1e-4, 
+    stepsize: float = None
+    ):
     '''
     Basic Frank-Wolfe algorithm.
 
@@ -60,14 +68,60 @@ def frankwolfe(x_0: float, grad=maxclique_grad, lmo=maxclique_lmo, max_iter: int
     '''
 
     x_hist = [x_0]
-    s_hist = []
+    s_hist = [x_0]
     for k in range(max_iter):
         g = grad(x=x_hist[-1])
         s = lmo(g)
-        if np.abs((x_hist[-1] - s) @ g) < tol:
+        if (x_hist[-1] - s) @ g < tol:
+            #print(f'Stopped by condition at {k}')
             break
         gamma = 2/(k+2) if stepsize is None else stepsize
         x_next = (1-gamma)*x_hist[-1] + gamma*s
         x_hist.append(x_next)
         s_hist.append(s)
-    return x_hist, s_hist
+    return x_hist, s_hist, k
+
+
+def frankwolfe_awaysteps(
+    x_0: float, 
+    f=maxclique_target, 
+    grad=maxclique_grad, 
+    lmo=maxclique_lmo, 
+    max_iter: int = 10000, 
+    tol: float = 1e-5, 
+    stepsize: float = None):
+    x_hist = [x_0]
+    s_t = [x_0]
+    weights = dict()
+    weights[np.where(x_0)[0][0]] = 1
+    for k in range(max_iter):
+        xt = x_hist[-1]
+        g = grad(x=xt)
+        s = lmo(g)
+        d_fw = s - xt
+        if -d_fw @ g < tol:
+            #print(f'Stopped by condition at {k}')
+            break
+        v = s_t[np.argmax([g@v for v in s_t],axis=0)]
+        d_as = xt - v
+        if -g @ d_fw >= -g @ d_as:
+            use_fw = True
+            gamma_max = 1
+            d = d_fw
+        else:
+            use_fw = False
+            a_v =  weights[np.where(v)[0][0]]
+            gamma_max = a_v/(1-a_v)
+            d = d_as
+        # LINESEARCH
+        gamma, _, _ ,_ ,_ ,_ = line_search(f, grad, xt, d, g)
+        x_next = xt + gamma*d
+        if use_fw:
+            if np.where(s)[0][0] in weights.keys():
+                weights[np.where(s)[0][0]] += gamma
+            else:
+                weights[np.where(s)[0][0]] = gamma
+        else:
+            weights[np.where(v)[0][0]] -= gamma
+        x_hist.append(x_next)
+    return x_hist, s_t, k
