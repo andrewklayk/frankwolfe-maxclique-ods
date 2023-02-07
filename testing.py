@@ -1,6 +1,6 @@
 # math
 import numpy as np
-from fw import *
+import fw
 # read and save data and results
 import pandas as pd
 import os
@@ -64,34 +64,37 @@ def read_dimacs_brock(fpath: str):
     return graph, graph_size, clique
 
 def main():
-    n = 6
-    A = make_test_graph(n, 0.6)
-    draw_graph(A)
-    plt.show()
-    
-    x_0 = np.zeros(n,dtype='float')
-    x_0[np.random.randint(low=0, high=n)] = 1.
-    x_hist, _, k = frankwolfe_pairwise(
-                    f=lambda x: -maxclique_target(A, x),
-                    grad = lambda x: -maxclique_grad(A, x, penalty='l2'),
-                    lmo = maxclique_lmo, max_iter = 10000, x_0 = x_0, tol=1e-3)
-    x = x_hist[-1]
-    print(x)
-    print(1./(1.-np.dot(np.dot(x.T,A),x)))
-
-
-
-
-
-
+    # n = 6
+    # A = make_test_graph(n, 0.6)
+    # draw_graph(A)
+    # plt.show()
+    # graph_size = n
+    # x_0 = np.zeros(n,dtype='float')
+    # x_0[np.random.randint(low=0, high=n)] = 1.
+    # for i in tqdm(range(n_tries)):
+    #         # generate a random new starting point
+    #         x_0 = np.zeros(graph_size,dtype='float')
+    #         x_0[np.random.randint(low=0, high=graph_size)] = 1.
+    #         # run
+    #         norm = 'f2'
+    #         x_hist, _, k = fw.frankwolfe_pairwise(
+    #             f = lambda x: -fw.maxclique_target(A, x, penalty=norm, alpha=0.04, beta=5),
+    #             grad = lambda x: -fw._maxclique_grad(A, x, penalty=norm,alpha=0.04, beta=5),
+    #             lmo = fw._maxclique_lmo, 
+    #             max_iter = 10000, x_0 = x_0, tol=1e-3)
+    # x = x_hist[-1]
+    # print(x)
+    # print(1./(1.-np.dot(np.dot(x.T,A),x)))
 
 
     graphs_dir = 'DIMACS'
-    n_tries = 10
+    n_tries = 30
     results = dict()
     print('\n')
 
+
     for filename in os.listdir(graphs_dir):
+        # read graph file
         f = os.path.join(graphs_dir, filename)
         if 'brock' in filename:
             graph, graph_size, clique = read_dimacs_brock(f)
@@ -103,13 +106,18 @@ def main():
         f_res = []
         graph_name = '.'.join(filename.split('.')[:-1])
         print(f'Working on {graph_name}')
+        # run the algorithm n_tries times
         for i in tqdm(range(n_tries)):
+            # generate a random new starting point
             x_0 = np.zeros(graph_size,dtype='float')
             x_0[np.random.randint(low=0, high=graph_size)] = 1.
-            x_hist, _, k = frankwolfe(
-                #f=lambda x: -maxclique_target(A, x),
-                grad = lambda x: -maxclique_grad(A, x, penalty='l2'),
-                lmo = maxclique_lmo, max_iter = 10000, x_0 = x_0, tol=1e-4)
+            # run
+            norm = 'f2'
+            x_hist, _, k = fw.frankwolfe_pairwise(
+                f = lambda x: -fw.maxclique_target(A, x, penalty=norm, alpha=0.04, beta=5),
+                grad = lambda x: -fw._maxclique_grad(A, x, penalty=norm,alpha=0.04, beta=5),
+                lmo = fw._maxclique_lmo, 
+                max_iter = 10000, x_0 = x_0, tol=1e-3)
             x = x_hist[-1]
             res.append(x)
             iters.append(k)
@@ -119,7 +127,9 @@ def main():
         cs_std = np.std(f_res)
         results[graph_name] = (avg_clique_size, max_clique_size, cs_std)
         #print(f'Mean found: {avg_clique_size}, Largest found: {max_clique_size}, Largest actual: {len(clique)}')
-    pd.DataFrame(results).to_csv('mcresults.csv')
+    res = pd.DataFrame(results)
+    print(res)
+    res.to_csv(f'pairwise_mcresults_{norm}.csv')
 
 
 if __name__ == "__main__":
