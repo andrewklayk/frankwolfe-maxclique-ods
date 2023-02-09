@@ -1,6 +1,4 @@
 import numpy as np
-from scipy.optimize import line_search
-from scipy.special import lambertw
 from warnings import warn
 
 # maximal clique problem
@@ -29,7 +27,7 @@ def maxclique_target(
     
     return x.T @ (A @ x) + p_term
 
-def _maxclique_grad(
+def maxclique_grad(
     A: np.ndarray, x: np.ndarray, penalty: str = 'l2',
     p: int = 0.5, alpha: float = None, beta: float = None, eps: float = None
     ):
@@ -55,7 +53,7 @@ def _maxclique_grad(
     
     return 2 * A @ x + dp
 
-def _maxclique_lmo(grad):
+def maxclique_lmo(grad):
     """
     LMO for the maximal clique problem. 
     The feasible set is the unit simplex, so return a [0,...,1,...,0] vector 
@@ -152,7 +150,7 @@ def _min_cub(a0, phi, phi0, phi_prime0, a1):
 
     return (-b + np.sqrt(b**2 - 3*a*phi_prime0))/(3*a)
 
-def _linesearch_armijo(f, g, d, xk, fk=None, gk=None, amax=1, A=None, c1=1e-4, c2=0.9, maxiter=1000):
+def linesearch_armijo(f, g, d, xk, fk=None, gk=None, amax=1, A=None, c1=1e-4, c2=0.9, maxiter=1000):
     """
     Armijo Line-Search algorithm.
     Source: Wright and Nocedal, 'Numerical Optimization', 1999, p. 57
@@ -176,7 +174,6 @@ def _linesearch_armijo(f, g, d, xk, fk=None, gk=None, amax=1, A=None, c1=1e-4, c
     #    return (gk.T @ d) / (d.T @ A @ d)
     
     def phi(alpha): return f(x=xk+alpha*d)
-    def phi_prime(alpha): return g(x=xk+alpha*d) @ d
 
     if fk is None:
         fk = f(x=xk)
@@ -200,12 +197,15 @@ def _linesearch_armijo(f, g, d, xk, fk=None, gk=None, amax=1, A=None, c1=1e-4, c
     return a
 
 def frankwolfe(
-    x_0: float, 
-    grad=_maxclique_grad, 
-    lmo=_maxclique_lmo,
+    x_0: np.ndarray,
+    f=maxclique_target,
+    grad=maxclique_grad, 
+    lmo=maxclique_lmo,
     max_iter: int = 10000, 
     tol: float = 1e-5, 
-    stepsize: float = None
+    stepsize: float = 'fixed',
+    penalty = 'l2',
+    A=None
     ):
     """
     Basic Frank-Wolfe algorithm.
@@ -219,27 +219,36 @@ def frankwolfe(
 
     x_hist = [x_0]
     s_hist = [x_0]
+    use_analytical = (penalty == 'l2' and not (A is None))
+
     for k in range(max_iter):
-        g = grad(x=x_hist[-1])
-        s = lmo(g)
-        if (x_hist[-1] - s) @ g < tol:
-            #print(f'Stopped by condition at {k}')
+        gk = grad(x=x_hist[-1])
+        sk = lmo(gk)
+        if (x_hist[-1] - sk) @ gk < tol:
             break
-        gamma = 2/(k+2) if stepsize is None else stepsize
-        x_next = (1-gamma)*x_hist[-1] + gamma*s
+        if stepsize == 'fixed':
+            gamma = 2/(k+2)
+        elif stepsize == 'armijo':
+            if use_analytical:
+                dk = x_hist[-1] - sk
+                gamma = (gk.T @ dk) / (dk.T @ A @ dk)
+            else:
+                gamma = linesearch_armijo(f, grad, (sk-x_hist[-1]), x_hist[-1], gk=gk)
+        x_next = (1-gamma)*x_hist[-1] + gamma*sk
         x_hist.append(x_next)
-        s_hist.append(s)
+        s_hist.append(sk)
     return x_hist, s_hist, k
 
 
 def frankwolfe_awaysteps(
-    x_0: float, 
+    x_0: np.ndarray, 
     f,
     grad, 
     lmo,
     max_iter: int = 10000, 
     tol: float = 1e-5, 
     stepsize: float = None,
+    penalty: str = 'l2',
     A: np.ndarray = None):
     """
     Away-Steps Frank-Wolfe algorithm.
@@ -255,8 +264,16 @@ def frankwolfe_awaysteps(
 
     x_hist = [x_0]
     s_t = [x_0]
+
     weights = dict()
     weights[np.where(x_0)[0][0]] = 1
+
+    num_stall_iter = 0
+    gap_prev = 0
+    gap = 0
+    
+    use_analytical = (penalty == 'l2' and not (A is None))
+
     for k in range(max_iter):
         xk = x_hist[-1]
         gk = grad(x=xk)
@@ -265,25 +282,34 @@ def frankwolfe_awaysteps(
         d_fw = s - xk
         # check the FW gap
         gap_fw = -d_fw @ gk
-        if gap_fw < tol:
-            break
         v = s_t[np.argmax([gk @ v for v in s_t], axis=0)]
         d_as = xk - v
         # choose the direction
+        gap_as = -gk @ d_as
         if gap_fw >= -gk @ d_as:
             use_fw = True
             gamma_max = 1
             dk = d_fw
+            gap = gap_fw
         else:
             use_fw = False
             a_v =  weights[np.where(v)[0][0]]
             gamma_max = a_v/(1-a_v)
             dk = d_as
+            gap = gap_as
+        
+        if np.abs(gap - gap_prev) < 1e-6:
+            if num_stall_iter > 5:
+                break
+            num_stall_iter += 1
+        gap_prev = gap
+
         # Line Search for stepsize; if using l2 penalty, find analytically
-        if A is None:
-            gamma, _, _ ,_ ,_ ,_ = line_search(f, grad, xk, dk, gk, c1=1e-6, c2=0.9)
-        else:
+        if use_analytical:
+            #gamma, _, _ ,_ ,_ ,_ = line_search(f, grad, xk, dk, gk, c1=1e-6, c2=0.9)
             gamma = (gk.T @ dk) / (dk.T @ A @ dk)
+        else:
+            gamma = linesearch_armijo(f=f, g=grad, d=dk, xk=xk, gk=gk, amax=gamma_max, c1=1e-4)
         #gamma = _linesearch(f=f, g=grad, d=dk, xk=xk, gk=gk, c1=1e-4, c2=0.9)
         x_next = xk + gamma*dk
         # update weights
@@ -307,7 +333,7 @@ def frankwolfe_awaysteps(
             if abs(gamma - gamma_max) < tol:
             # if we completely removed v from x
                 weights.pop(v_ind)
-                s_t.pop(v)
+                s_t.pop([np.all(v == x) for x in s_t].index(True))
             else:
                 weights.update((vertex, weight*(1+gamma)) for vertex, weight in weights.items())
                 weights[v_ind] -= gamma
@@ -323,12 +349,18 @@ def frankwolfe_pairwise(
     max_iter: int = 10000,
     tol: float = 1e-5, 
     stepsize: float = None,
+    penalty='l2',
     A: np.ndarray = None):
 
     x_hist = [x_0]
     s_t = [x_0]
     weights = dict()
     weights[np.where(x_0)[0][0]] = 1
+    num_stall_iter = 0
+    gap_prev = 0
+
+    use_analytical = (penalty == 'l2' and not (A is None))
+
     for k in range(max_iter):
         xk = x_hist[-1]
         gk = grad(x=xk)
@@ -337,19 +369,27 @@ def frankwolfe_pairwise(
         d_fw = s - xk
         # check the FW gap
         gap_fw = -d_fw @ gk
+        # check stopping criterion
         if gap_fw < tol:
             break
+        if np.abs(gap_fw - gap_prev) < 1e-6:
+            if num_stall_iter > 5:
+                break
+            num_stall_iter += 1
+        gap_prev = gap_fw
+
         # find away-step direction
         v = s_t[np.argmax([gk @ v for v in s_t],axis=0)]
         # combine directions
         a_v =  weights[np.where(v)[0][0]]
         dk = s - v
         # Line Search for stepsize; if using l2 penalty, find analytically
-        if A is None:
+        if use_analytical:
             #gamma, _, _ ,_ ,_ ,_ = line_search(f, grad, xk, dk, gk, c1=1e-4, c2=0.9,maxiter=1000)
-            gamma = _linesearch_armijo(f=f, g=grad, d=dk, xk=xk, gk=gk, amax= a_v, c1=1e-4, c2=0.9)
-        else:
+            #if gamma is None:
             gamma = (gk.T @ dk) / (dk.T @ A @ dk)
+        else:
+            gamma = linesearch_armijo(f=f, g=grad, d=dk, xk=xk, gk=gk, amax=a_v, c1=1e-4)
         x_next = xk + gamma*dk
         # update weights for s
         s_ind = np.where(s)[0][0]
