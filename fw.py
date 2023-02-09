@@ -66,90 +66,6 @@ def maxclique_lmo(grad):
     return e
 
 
-
-def _linesearch(f, g, d, xk, fk=None, gk=None, max_step=1, A=None, c1=0.1, c2=0.9, maxiter=10000):
-    """
-    Line-Search algorithm for strong Frank-Wolfe conditions.
-    Source: Wright and Nocedal, 'Numerical Optimization', 1999, p. 59-61
-
-    f: target f-n;
-    g: gradient of f;
-    d: descent direction;
-    xk: starting point;
-    fk: value of target f-n at xk;
-    gk: value of gradient at xk;
-    max_step: maximum stepsize;
-    A: matrix for the maxclique problem, used to compute alpha analytically for l2 penalty;
-    """
-
-    # if we have an L2 penalty, can compute the optimal stepsize analytically
-    # by setting the derivative w.r.t. alpha to 0
-    if gk is None:
-        gk = g(xk)
-    if not (A is None):
-        return (gk.T @ d) / (d.T @ A @ d)
-    # for different norms, use a numerical algorithm
-    def phi(alpha): return f(x=xk+alpha*d)
-    def phi_prime(alpha): return g(x=xk+alpha*d) @ d
-    
-    if fk is None:
-        fk = f(x=xk)
-
-    a = [0, max_step/2]
-    i = 1
-    phi_prev = fk
-    for _ in range(maxiter):
-        ai = a[i]
-        phi_ai = phi(ai)
-        phi_prime0 = phi_prime(0)
-        if phi_ai > fk + c1*ai*phi_prime0 or (phi_ai > phi_prev and i > 1):
-            a_star = _ls_zoom(a[i-1], ai, phi, phi_prime, fk, phi_prime0, c1, c2)
-            return a_star
-        phi_prime_ai = phi_prime(ai)
-        if np.abs(phi_prime_ai) <= -c2 * phi_prime0:
-            a_star = ai
-            return a_star
-        if phi_prime_ai >= 0:
-            a_star = _ls_zoom(ai, a[i-1], phi, phi_prime, fk, phi_prime0, c1, c2)
-            return a_star
-        a.append(ai*2)
-        phi_prev = phi_ai
-    warn(f'Line search did not converge in maxiter={maxiter} iterations', RuntimeWarning)
-    return ai
-
-def _ls_zoom(a, b, phi, phi_prime, phi0, phi_prime0, c1=1e-4, c2=0.9, maxiter=50):
-    a_new = 0
-    for _ in range(maxiter):
-        a_l = a if a < b else b
-        a_h = b if a < b else a
-        # if a1 is None:
-        #     a1 = _min_quad(a_h, phi, phi0, phi_prime0)
-        # else:
-
-        a_new = a_l + 0.5*(a_h-a_l)
-        if phi(a_new) > phi0 + c1*a_new*phi_prime0 or phi(a_new) > phi(a_l):
-            a_h = a_new
-        else:
-            phi_pr_j = phi_prime(a_new)
-            if np.abs(phi_pr_j) <= -c2*phi_prime0:
-                return a_new
-            if phi_pr_j * (a_h - a_l) >= 0:
-                a_h = a_l
-            a_l = a_new
-    warn(f'Zoom f-n did not converge in maxiter={maxiter} iterations', RuntimeWarning)
-    return a_new
-
-def _min_quad(a0, phi, phi0=None, phi_prime0=None):
-    return -phi_prime0 * a0**2 / (2*(phi(a0) - phi0 - phi_prime0*a0))
-
-def _min_cub(a0, phi, phi0, phi_prime0, a1):
-    t = 1/(a0**2 * a1**2 * (a1-a0))
-
-    a = t * ((a0**2)*(phi(a1) - phi0 - phi_prime0*a1) - (a1**2) * (phi(a0) - phi0 - phi_prime0 * a0))
-    b = t * ((-a0**3)*(phi(a1) - phi0 - phi_prime0*a1) + (a1**3) * (phi(a0) - phi0 - phi_prime0 * a0))
-
-    return (-b + np.sqrt(b**2 - 3*a*phi_prime0))/(3*a)
-
 def linesearch_armijo(f, g, d, xk, fk=None, gk=None, amax=1, A=None, c1=1e-4, c2=0.9, maxiter=1000):
     """
     Armijo Line-Search algorithm.
@@ -263,10 +179,16 @@ def frankwolfe_awaysteps(
     """
 
     x_hist = [x_0]
-    s_t = [x_0]
+    s_t = []
 
     weights = dict()
-    weights[np.where(x_0)[0][0]] = 1
+    for i, w in enumerate(x_0):
+        if w > 1e-6:
+            weights[i] = w
+            v = np.zeros_like(x_0)
+            v[i] = 1
+            s_t.append(v)
+    #weights[np.where(x_0)[0][0]] = 1
 
     num_stall_iter = 0
     gap_prev = 0

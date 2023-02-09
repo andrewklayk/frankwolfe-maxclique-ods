@@ -122,6 +122,8 @@ def main():
         graphs[graph_name] = A
 
     for graph_name, A in graphs.items():
+        if graph_name in ['C4000.5', 'C2000.9']:
+            continue
         res = []
         iters = []
         f_res = []
@@ -131,6 +133,8 @@ def main():
         graph_size = A.shape[0]
         for _ in tqdm(range(n_tries)):
             # generate a random new starting point
+            # x_0 = np.random.rand(graph_size)
+            # x_0 /= np.sum(x_0)
             x_0 = np.zeros(graph_size,dtype='float')
             x_0[np.random.randint(low=0, high=graph_size)] = 1.
             # run
@@ -141,7 +145,7 @@ def main():
                 grad = lambda x: -fw.maxclique_grad(A, x, penalty=norm,alpha=0.04, beta=5),
                 lmo = fw.maxclique_lmo, penalty=norm, stepsize='armijo',
                 max_iter = 10000, x_0 = x_0, tol=1e-4, A=A
-                )
+            )
             time_end = time.process_time_ns()
             timing.append((time_end - time_start) * 1e-9)
             x = x_hist[-1]
